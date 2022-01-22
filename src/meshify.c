@@ -986,6 +986,36 @@ int save_obj(const char *fnm, vec3i *tris, vec3d *pts, int ntri, int npt){
 	return EXIT_SUCCESS;
 }
 
+int save_off(const char *fnm, vec3i *tris, vec3d *pts, int ntri, int npt){
+	FILE *fp = fopen(fnm,"w");
+	if (fp == NULL)
+		return EXIT_FAILURE;
+        fprintf(fp,"OFF\n%d\t%d\t0\n",npt,ntri);
+	for (int i=0;i<npt;i++)
+		fprintf(fp, "%g %g %g\n", pts[i].x, pts[i].y,pts[i].z);
+	for (int i=0;i<ntri;i++)
+		fprintf(fp, "%d %d %d\n", tris[i].x+1, tris[i].y+1, tris[i].z+1);
+	fclose(fp);
+	return EXIT_SUCCESS;
+}
+
+int save_json(const char *fnm, vec3i *tris, vec3d *pts, int ntri, int npt){
+	FILE *fp = fopen(fnm,"w");
+	if (fp == NULL)
+		return EXIT_FAILURE;
+        fprintf(fp,"{\n");
+        fprintf(fp,"\t\"_DataInfo_\":{\n\t\t\"JMeshVersion\":\"0.5\",\n\t\t\"Comment\":\"Created by nii2mesh\"\n\t},\n");
+        fprintf(fp,"\t\"MeshVertex3\":[\n");
+	for (int i=0;i<npt;i++)
+		fprintf(fp, "[%g,\t%g,\t%g],\n", pts[i].x, pts[i].y,pts[i].z);
+        fprintf(fp,"\t],\n\t\"MeshTri3\":[\n");
+	for (int i=0;i<ntri;i++)
+		fprintf(fp, "[%d,\t%d,\t%d],\n", tris[i].x+1, tris[i].y+1, tris[i].z+1);
+        fprintf(fp,"\t]\n}\n");
+	fclose(fp);
+	return EXIT_SUCCESS;
+}
+
 int save_stl(const char *fnm, vec3i *tris, vec3d *pts, int ntri, int npt){
 	//binary STL http://paulbourke.net/dataformats/stl/
 	//n.b. like other tools, ignores formal restriction that all adjacent facets must share two common vertices.
@@ -1245,6 +1275,10 @@ int save_mesh(const char *fnm, vec3i *tris, vec3d *pts, int ntri, int npt, bool 
 		return save_stl(fnm, tris, pts, ntri, npt);
 	else if (strstr(ext, ".vtk"))
 		return save_vtk(fnm, tris, pts, ntri, npt);
+	else if (strstr(ext, ".off"))
+		return save_off(fnm, tris, pts, ntri, npt);
+	else if (strstr(ext, ".json"))
+		return save_json(fnm, tris, pts, ntri, npt);
 	strcpy(basenm, fnm);
 	strcat(basenm, ".obj");
 	return save_obj(basenm, tris, pts, ntri, npt);
