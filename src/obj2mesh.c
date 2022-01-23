@@ -81,7 +81,11 @@ int main(int argc,char **argv) {
 		printf("    -r v    reduction factor (default %g)\n", reduceFraction);
 		printf("    -s v    smoothing iterations (default %d)\n", smoothIter);
 		printf("    -v v    verbose (0=silent, 1=verbose, default %d)\n", verbose);
-		printf("mesh extension sets format (.gii, .mz3, .obj, .ply, .pial, .stl, .vtk)\n");
+#ifdef HAVE_ZLIB
+		printf("mesh extension sets format (.gii, .mz3, .obj, .ply, .pial, .stl, .vtk, .off, .json, .jmsh)\n");
+#else
+		printf("mesh extension sets format (.gii, .mz3, .obj, .ply, .pial, .stl, .vtk, .off, .json)\n");
+#endif
 		printf("Example: '%s dragon.obj small.obj'\n",argv[0]);
 		printf("Example: '%s -v 1 -r 0.1 dragon.obj smaller.gii'\n",argv[0]);
 		printf("Example: '%s -s 30 dragon.obj smoother.gii'\n",argv[0]);

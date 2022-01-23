@@ -7,6 +7,7 @@
 #include <time.h>
 #ifdef HAVE_ZLIB
 	#include <zlib.h>
+	#include "cJSON.h"
 #endif
 #include "meshify.h"
 #include "base64.h" //required for GIfTI
@@ -20,6 +21,8 @@ typedef struct {
 } GRIDCELL;
 
 #define ABS(x) (x < 0 ? -(x) : (x))
+
+enum TZipMethod {zmZlib, zmGzip, zmBase64, zmLzip, zmLzma, zmLz4, zmLz4hc};
 
 double sqr(double x) {
 	return x * x;
@@ -1243,6 +1246,156 @@ int save_vtk(const char *fnm, vec3i *tris, vec3d *pts, int ntri, int npt){
 	fclose(fp);
 	return EXIT_SUCCESS;
 }
+#ifdef HAVE_ZLIB
+int zmat_run(const size_t inputsize, unsigned char *inputstr, size_t *outputsize, unsigned char **outputbuf, const int zipid, int *ret, const int iscompress){
+	z_stream zs;
+	size_t buflen[2]={0};
+	*outputbuf=NULL;
+
+	zs.zalloc = Z_NULL;
+	zs.zfree = Z_NULL;
+	zs.opaque = Z_NULL;
+
+	if(inputsize==0)
+		return -1;
+
+	if(iscompress){
+		/** perform compression or encoding   */
+		if(zipid==zmBase64){
+			/** base64 encoding  */
+                        *outputbuf=base64_encode((const unsigned char*)inputstr, inputsize, outputsize);
+		}else if(zipid==zmZlib){
+			/** zlib (.zip) or gzip (.gz) compression  */
+			if(deflateInit(&zs,  (iscompress>0) ? Z_DEFAULT_COMPRESSION : (-iscompress)) != Z_OK)
+                                return -2;
+			buflen[0] =deflateBound(&zs,inputsize);
+			*outputbuf=(unsigned char *)malloc(buflen[0]);
+			zs.avail_in = inputsize; /* size of input, string + terminator*/
+			zs.next_in = (Bytef *)inputstr; /* input char array*/
+			zs.avail_out = buflen[0]; /* size of output*/
+
+			zs.next_out =  (Bytef *)(*outputbuf); /*(Bytef *)(); // output char array*/
+
+			*ret=deflate(&zs, Z_FINISH);
+			*outputsize=zs.total_out;
+			if(*ret!=Z_STREAM_END && *ret!=Z_OK)
+				return -3;
+			deflateEnd(&zs);
+		}else{
+			return -7;
+		}
+	}else{
+		/** perform decompression or decoding */
+		if(zipid==zmBase64){
+			/** base64 decoding  */
+			*outputbuf=base64_decode((const unsigned char*)inputstr, inputsize, outputsize);
+		}else if(zipid==zmZlib){
+			/** zlib (.zip) or gzip (.gz) decompression */
+			int count=1;
+			if(zipid==zmZlib)
+				if(inflateInit(&zs) != Z_OK)
+                                        return -2;
+
+			buflen[0] =inputsize*20;
+			*outputbuf=(unsigned char *)malloc(buflen[0]);
+
+			zs.avail_in = inputsize; /* size of input, string + terminator*/
+			zs.next_in =inputstr; /* input char array*/
+			zs.avail_out = buflen[0]; /* size of output*/
+
+			zs.next_out =  (Bytef *)(*outputbuf); /*(Bytef *)(); // output char array*/
+
+			while((*ret=inflate(&zs, Z_SYNC_FLUSH))!=Z_STREAM_END && count<=10){
+				*outputbuf=(unsigned char *)realloc(*outputbuf, (buflen[0]<<count));
+				zs.next_out =  (Bytef *)(*outputbuf+(buflen[0]<<(count-1)));
+				zs.avail_out = (buflen[0]<<(count-1)); /* size of output*/
+				count++;
+			}
+			*outputsize=zs.total_out;
+
+			if(*ret!=Z_STREAM_END && *ret!=Z_OK)
+				return -3;
+			inflateEnd(&zs);
+		}else{
+			return -7;
+		}
+	}
+	return 0;
+}
+
+int save_jmsh(const char *fnm, vec3i *tris, vec3d *pts, int ntri, int npt){
+	FILE *fp;
+	cJSON *root=NULL, *hdr=NULL, *node=NULL, *face=NULL;
+	char *jsonstr=NULL;
+	int dim[2]={0,3}, len[2]={1,0};
+	size_t compressedbytes, totalbytes;
+	unsigned char *compressed=NULL, *buf=NULL;
+	int ret=0, status=0;
+
+	root=cJSON_CreateObject();
+
+	cJSON_AddItemToObject(root,  "_DataInfo_", hdr = cJSON_CreateObject());
+	cJSON_AddStringToObject(hdr, "JMeshVersion", "0.5");
+	cJSON_AddStringToObject(hdr, "Comment", "Created by nii2mesh");
+
+	cJSON_AddItemToObject(root,  "MeshVertex3", node = cJSON_CreateObject());
+	cJSON_AddStringToObject(node,"_ArrayType_","double");
+	dim[0]=npt;
+	cJSON_AddItemToObject(node,  "_ArraySize_",cJSON_CreateIntArray(dim,2));
+	cJSON_AddStringToObject(node,"_ArrayZipType_","zlib");
+	len[1]=dim[0]*dim[1];
+	cJSON_AddItemToObject(node,  "_ArrayZipSize_",cJSON_CreateIntArray(len,2));
+
+	totalbytes=dim[0]*dim[1]*sizeof(pts[0].x);
+	ret=zmat_run(totalbytes, (unsigned char *)&(pts[0].x), &compressedbytes, (unsigned char **)&compressed, zmZlib, &status,1);
+	if(!ret){
+		 ret=zmat_run(compressedbytes, compressed, &totalbytes, (unsigned char **)&buf, zmBase64, &status,1);
+		 cJSON_AddStringToObject(node,  "_ArrayZipData_",(char *)buf);
+	}
+	if(compressed){
+		free(compressed);
+		compressed=NULL;
+	}
+	if(buf){
+		free(buf);
+		buf=NULL;
+	}
+	cJSON_AddItemToObject(root,  "MeshTri3", face = cJSON_CreateObject());
+	cJSON_AddStringToObject(face,"_ArrayType_","uint32");
+	dim[0]=ntri;
+	cJSON_AddItemToObject(face,  "_ArraySize_",cJSON_CreateIntArray(dim,2));
+	cJSON_AddStringToObject(face,"_ArrayZipType_","zlib");
+	len[1]=dim[0]*dim[1];
+	cJSON_AddItemToObject(face,  "_ArrayZipSize_",cJSON_CreateIntArray(len,2));
+
+	totalbytes=dim[0]*dim[1]*sizeof(tris[0].x);
+	ret=zmat_run(totalbytes, (unsigned char *)&(tris[0].x), &compressedbytes, (unsigned char **)&compressed, zmZlib, &status,1);
+	if(!ret){
+		ret=zmat_run(compressedbytes, compressed, &totalbytes, (unsigned char **)&buf, zmBase64, &status,1);
+		cJSON_AddStringToObject(face,  "_ArrayZipData_",(char *)buf);
+	}
+	if(compressed)
+		free(compressed);
+	if(buf)
+		free(buf);
+
+	jsonstr=cJSON_Print(root);
+	if(jsonstr==NULL)
+		return EXIT_FAILURE;
+
+	fp=fopen(fnm,"wt");
+	if(fp==NULL)
+		return EXIT_FAILURE;
+	fprintf(fp,"%s\n",jsonstr);
+	fclose(fp);
+
+	if(jsonstr)
+		free(jsonstr);
+	if(root)
+		cJSON_Delete(root);
+	return EXIT_SUCCESS;
+}
+#endif
 
 void strip_ext(char *fname){
 	char *end = fname + strlen(fname);
@@ -1279,6 +1432,10 @@ int save_mesh(const char *fnm, vec3i *tris, vec3d *pts, int ntri, int npt, bool 
 		return save_off(fnm, tris, pts, ntri, npt);
 	else if (strstr(ext, ".json"))
 		return save_json(fnm, tris, pts, ntri, npt);
+#ifdef HAVE_ZLIB
+	else if (strstr(ext, ".jmsh"))
+		return save_jmsh(fnm, tris, pts, ntri, npt);
+#endif
 	strcpy(basenm, fnm);
 	strcat(basenm, ".obj");
 	return save_obj(basenm, tris, pts, ntri, npt);

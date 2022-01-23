@@ -201,7 +201,11 @@ int main(int argc,char **argv) {
 		printf("    -q v    quality (0=fast, 1= balanced, 2=best, default %d)\n", quality);
 		printf("    -s v    post-smoothing iterations (default %d)\n", postSmooth);
 		printf("    -v v    verbose (0=silent, 1=verbose, default %d)\n", verbose);
-		printf("mesh extension sets format (.gii, .mz3, .obj, .ply, .pial, .stl, .vtk)\n");
+#ifdef HAVE_ZLIB
+		printf("mesh extension sets format (.gii, .mz3, .obj, .ply, .pial, .stl, .vtk, .off, .json, .jmsh)\n");
+#else
+		printf("mesh extension sets format (.gii, .mz3, .obj, .ply, .pial, .stl, .vtk, .off, .json)\n");
+#endif
 		printf("Example: '%s voxels.nii mesh.obj'\n",argv[0]);
 		printf("Example: '%s bet.nii.gz -i 22 myOutput.obj'\n",argv[0]);
 		printf("Example: '%s bet.nii.gz -i b bright.obj'\n",argv[0]);
