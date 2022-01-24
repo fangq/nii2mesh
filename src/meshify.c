@@ -1395,6 +1395,121 @@ int save_jmsh(const char *fnm, vec3i *tris, vec3d *pts, int ntri, int npt){
 		cJSON_Delete(root);
 	return EXIT_SUCCESS;
 }
+
+void write_ubjsonint(int len, int *dat, FILE *fp){
+	if (&littleEndianPlatform)
+		swap_4bytes(len, dat);
+	fwrite(dat,len,4,fp);
+}
+
+int save_bmsh(const char *fnm, vec3i *tris, vec3d *pts, int ntri, int npt){
+	int markerlen=0;
+	const char *output[]={
+	"{",
+		"N","","_DataInfo_","{",
+			"N","","JMeshVersion","S","","0.5",
+			"N","","Comment","S","","Created by nii2mesh",
+		"}",
+		"N","","MeshVertex3","{",
+			"N","","_ArrayType_","S","","double",
+			"N","","_ArraySize_","[$l#","?1","?2",
+			"N","","_ArrayZipType_","S","","zlib",
+			"N","","_ArrayZipSize_","[$l#","?3","?4",
+			"N","","_ArrayZipData_","S","","?5",
+		"}",
+		"N","","MeshTri3","{",
+			"N","","_ArrayType_","S","","uint32",
+			"N","","_ArraySize_","[$l#","?6","?7",
+			"N","","_ArrayZipType_","S","","zlib",
+			"N","","_ArrayZipSize_","[$l#","?8","?9",
+			"N","","_ArrayZipData_","S","","?10",
+		"}",
+	"}"
+	};
+
+	FILE *fp = fopen(fnm,"wb");
+	if (fp == NULL)
+		return EXIT_FAILURE;
+
+	markerlen=sizeof(output)/sizeof(char*);
+
+	for(int i=0;i<markerlen;i++){
+		int slen=strlen(output[i]);
+		if(slen>0 && output[i][0]!='?'){
+			if(!(slen==1 && output[i][0]=='N'))
+				fwrite(output[i],1,slen,fp);
+			if(slen==1 && (output[i][0]=='N' || output[i][0]=='S') && i+2<markerlen && output[i+1][0]=='\0' && output[i+2][0]!='?'){
+				unsigned int keylen=strlen(output[i+2]);
+				if(keylen<256){
+					unsigned char keylenbyte=keylen;
+					fputc('U',fp);
+					fwrite(&keylenbyte,1,sizeof(keylenbyte),fp);
+				}else{
+					fputc('l',fp);
+					write_ubjsonint(1,&keylen,fp);
+				}
+			}
+		}else{
+			if(slen>0){
+				int slotid=0;
+				if(sscanf(output[i],"\?%d",&slotid)==1 && slotid>0){
+					unsigned char *compressed=NULL;
+					size_t compressedbytes, totalbytes;
+					int dim[2]={0,3}, len[2]={1,0};
+					int ret=0, status=0;
+					switch(slotid){
+						case 1: {unsigned char val=2;      fputc('U',fp);fwrite(&val,1,sizeof(val),fp);break;}
+						case 2: {int val[2]; val[0]=npt; val[1]=3; write_ubjsonint(2,val,fp);break;}
+						case 3: {unsigned char val=1;      fputc('U',fp);fwrite(&val,1,sizeof(val),fp);break;}
+						case 4: {int val=npt*3;		write_ubjsonint(1,&val,fp);break;}
+						case 6: {unsigned char val=2;      fputc('U',fp);fwrite(&val,1,sizeof(val),fp);break;}
+						case 7: {int val[2]; val[0]=ntri; val[1]=3; write_ubjsonint(2,val,fp);break;}
+						case 8: {unsigned char val=1;      fputc('U',fp);fwrite(&val,1,sizeof(val),fp);break;}
+						case 9: {int val=ntri*3;	   write_ubjsonint(1,&val,fp);break;}
+						case 5:
+							dim[0]=npt;
+							len[1]=dim[0]*dim[1];
+
+							totalbytes=dim[0]*dim[1]*sizeof(pts[0].x);
+							ret=zmat_run(totalbytes, (unsigned char *)&(pts[0].x), &compressedbytes, (unsigned char **)&compressed, zmZlib, &status,1);
+							if(!ret){
+								int clen=compressedbytes;
+								fputc('l',fp);
+								write_ubjsonint(1,&clen,fp);
+								fwrite(compressed,1,compressedbytes,fp);
+							}
+							if(compressed)
+								free(compressed);
+							break;
+						case 10:
+							dim[0]=ntri;
+							len[1]=dim[0]*dim[1];
+
+							totalbytes=dim[0]*dim[1]*sizeof(tris[0].x);
+							unsigned int *val=(unsigned int *)malloc(totalbytes);
+							memcpy(val,&(tris[0].x),totalbytes);
+							for(int i=0;i<len[1];i++)
+								val[i]++;
+							ret=zmat_run(totalbytes, (unsigned char *)val, &compressedbytes, (unsigned char **)&compressed, zmZlib, &status,1);
+							free(val);
+							if(!ret){
+								int clen=compressedbytes;
+								fputc('l',fp);
+								write_ubjsonint(1,&clen,fp);
+								fwrite(compressed,1,compressedbytes,fp);
+							}
+
+							if(compressed)
+								free(compressed);
+							break;
+					}
+				}
+			}
+		}
+	}
+	fclose(fp);
+	return EXIT_SUCCESS;
+}
 #endif
 
 void strip_ext(char *fname){
@@ -1435,6 +1550,8 @@ int save_mesh(const char *fnm, vec3i *tris, vec3d *pts, int ntri, int npt, bool 
 #ifdef HAVE_ZLIB
 	else if (strstr(ext, ".jmsh"))
 		return save_jmsh(fnm, tris, pts, ntri, npt);
+	else if (strstr(ext, ".bmsh"))
+		return save_bmsh(fnm, tris, pts, ntri, npt);
 #endif
 	strcpy(basenm, fnm);
 	strcat(basenm, ".obj");

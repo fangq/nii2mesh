@@ -82,7 +82,7 @@ int main(int argc,char **argv) {
 		printf("    -s v    smoothing iterations (default %d)\n", smoothIter);
 		printf("    -v v    verbose (0=silent, 1=verbose, default %d)\n", verbose);
 #ifdef HAVE_ZLIB
-		printf("mesh extension sets format (.gii, .mz3, .obj, .ply, .pial, .stl, .vtk, .off, .json, .jmsh)\n");
+		printf("mesh extension sets format (.gii, .mz3, .obj, .ply, .pial, .stl, .vtk, .off, .json, .jmsh, bmsh)\n");
 #else
 		printf("mesh extension sets format (.gii, .mz3, .obj, .ply, .pial, .stl, .vtk, .off, .json)\n");
 #endif
