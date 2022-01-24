@@ -1369,7 +1369,12 @@ int save_jmsh(const char *fnm, vec3i *tris, vec3d *pts, int ntri, int npt){
 	cJSON_AddItemToObject(face,  "_ArrayZipSize_",cJSON_CreateIntArray(len,2));
 
 	totalbytes=dim[0]*dim[1]*sizeof(tris[0].x);
-	ret=zmat_run(totalbytes, (unsigned char *)&(tris[0].x), &compressedbytes, (unsigned char **)&compressed, zmZlib, &status,1);
+	unsigned int *val=(unsigned int *)malloc(totalbytes);
+	memcpy(val,&(tris[0].x),totalbytes);
+	for(int i=0;i<len[1];i++)
+		val[i]++;
+	ret=zmat_run(totalbytes, (unsigned char *)val, &compressedbytes, (unsigned char **)&compressed, zmZlib, &status,1);
+	free(val);
 	if(!ret){
 		ret=zmat_run(compressedbytes, compressed, &totalbytes, (unsigned char **)&buf, zmBase64, &status,1);
 		cJSON_AddStringToObject(face,  "_ArrayZipData_",(char *)buf);
